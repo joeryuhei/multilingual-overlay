@@ -7,12 +7,10 @@ import time
 import tkinter as tk
 from tkinter import messagebox, ttk
 
-import pytesseract
-
 from multilingual_overlay.deepl import ApiPlan, TranslationError, translate_lines
-from multilingual_overlay.ocr import recognize_lines
+from multilingual_overlay.ocr import OcrError, recognize_lines
 from multilingual_overlay.overlay import TranslationOverlay
-from multilingual_overlay.pipeline import StableText, TranslationMemory
+from multilingual_overlay.pipeline import RetryBackoff, StableText, TranslationMemory
 from multilingual_overlay.windows import TargetWindow, capture_window, list_windows
 
 OCR_INTERVAL_SECONDS = 1.5
@@ -130,12 +128,19 @@ class OverlayApp:
     ) -> None:
         stability = StableText()
         memory = TranslationMemory()
+        retry = RetryBackoff()
         last_translated: tuple[str, ...] | None = None
         last_translation_at = 0.0
+        last_error = ""
+        fallback_lines: tuple[str, ...] | None = None
         try:
             while not stop_event.is_set():
                 image = capture_window(target.handle)
+                if stop_event.is_set():
+                    break
                 lines = recognize_lines(image)
+                if stop_event.is_set():
+                    break
                 x, y = self.window_position(target.handle)
                 self.events.put(("position", "", x, y))
 
@@ -144,6 +149,7 @@ class OverlayApp:
                     now = time.monotonic()
                     if current != last_translated and (
                         now - last_translation_at >= MIN_TRANSLATION_INTERVAL_SECONDS
+                        and retry.ready(now)
                     ):
                         last_translation_at = now
                         try:
@@ -151,32 +157,55 @@ class OverlayApp:
                                 current, lambda missing: translate_lines(missing, api_key, plan)
                             )
                             last_translated = current
+                            retry.succeeded()
+                            last_error = ""
+                            fallback_lines = None
                             self.events.put(("translation", "\n".join(translated), x, y))
                         except TranslationError as error:
+                            last_error = str(error)
+                            fallback_lines = current
+                            retry.failed(time.monotonic())
                             self.events.put(
                                 ("fallback", f"{error}\n\nOCR原文:\n" + "\n".join(current), x, y)
                             )
+                    elif (
+                        current != last_translated
+                        and last_error
+                        and current != fallback_lines
+                    ):
+                        fallback_lines = current
+                        self.events.put(
+                            (
+                                "fallback",
+                                f"DeepL再試行待ち: {last_error}\n\nOCR原文:\n"
+                                + "\n".join(current),
+                                x,
+                                y,
+                            )
+                        )
                 stop_event.wait(OCR_INTERVAL_SECONDS)
-        except (RuntimeError, pytesseract.TesseractNotFoundError, pytesseract.TesseractError):
+        except (RuntimeError, OcrError) as error:
             self.events.put(
                 (
                     "error",
-                    "キャプチャまたはOCRに失敗しました。対象ウィンドウが開いていること、"
-                    "英語・日本語データ付きTesseractがインストール済みであることを確認してください。",
+                    f"{error} 対象ウィンドウが表示されていること、"
+                    "Tesseractと英語・日本語データが利用可能なことを確認してください。",
                     0,
                     0,
                 )
             )
-        except Exception:
-            self.events.put(("error", "対象ウィンドウをキャプチャできませんでした。", 0, 0))
         finally:
             self.events.put(("stopped", "", 0, 0))
 
     @staticmethod
     def window_position(handle: int) -> tuple[int, int]:
+        import pywintypes
         import win32gui
 
-        left, top, _, _ = win32gui.GetWindowRect(handle)
+        try:
+            left, top, _, _ = win32gui.GetWindowRect(handle)
+        except pywintypes.error:
+            raise RuntimeError("対象ウィンドウの位置を取得できませんでした。") from None
         return left, top
 
     def process_events(self) -> None:

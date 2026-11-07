@@ -7,11 +7,28 @@ import pytesseract
 from pytesseract import Output
 
 
+class OcrError(RuntimeError):
+    """A safe-to-display OCR failure."""
+
+
 def recognize_lines(
-    image: Image.Image, language: str = "eng+jpn", minimum_confidence: float = 35
+    image: Image.Image,
+    language: str = "eng+jpn",
+    minimum_confidence: float = 35,
+    timeout_seconds: float = 8,
 ) -> tuple[str, ...]:
     """Return readable OCR lines, discarding low-confidence words."""
-    data = pytesseract.image_to_data(image, lang=language, output_type=Output.DICT)
+    try:
+        data = pytesseract.image_to_data(
+            image, lang=language, output_type=Output.DICT, timeout=timeout_seconds
+        )
+    except pytesseract.TesseractNotFoundError:
+        raise OcrError("Tesseractが見つかりません。PATHとインストール状態を確認してください。") from None
+    except pytesseract.TesseractError:
+        raise OcrError("OCRに失敗しました。eng/jpn言語データを確認してください。") from None
+    except RuntimeError:
+        raise OcrError(f"OCRが{timeout_seconds:g}秒でタイムアウトしました。") from None
+
     grouped: dict[tuple[int, int, int], list[str]] = defaultdict(list)
 
     for index, word in enumerate(data["text"]):

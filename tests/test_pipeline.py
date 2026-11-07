@@ -1,4 +1,21 @@
-from multilingual_overlay.pipeline import StableText, TranslationMemory
+from multilingual_overlay.pipeline import RetryBackoff, StableText, TranslationMemory
+
+
+def test_retry_backoff_grows_and_resets() -> None:
+    retry = RetryBackoff(initial_seconds=2, maximum_seconds=8)
+    assert retry.ready(0)
+    retry.failed(0)
+    assert not retry.ready(1.9)
+    assert retry.ready(2)
+    retry.failed(2)
+    assert not retry.ready(5.9)
+    assert retry.ready(6)
+    retry.failed(6)
+    retry.failed(14)
+    assert not retry.ready(21.9)
+    assert retry.ready(22)
+    retry.succeeded()
+    assert retry.ready(0)
 
 
 def test_stable_text_requires_repeat_and_debounce() -> None:

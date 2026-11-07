@@ -4,6 +4,25 @@ from collections import OrderedDict
 from collections.abc import Callable
 
 
+class RetryBackoff:
+    def __init__(self, initial_seconds: float = 2, maximum_seconds: float = 30) -> None:
+        self.initial_seconds = initial_seconds
+        self.maximum_seconds = maximum_seconds
+        self._delay = initial_seconds
+        self._retry_at = 0.0
+
+    def ready(self, now: float) -> bool:
+        return now >= self._retry_at
+
+    def failed(self, now: float) -> None:
+        self._retry_at = now + self._delay
+        self._delay = min(self._delay * 2, self.maximum_seconds)
+
+    def succeeded(self) -> None:
+        self._delay = self.initial_seconds
+        self._retry_at = 0.0
+
+
 class TranslationMemory:
     def __init__(self, capacity: int = 512) -> None:
         self.capacity = capacity
