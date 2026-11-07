@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "multilingual-overlay"
+version = "0.1.0"
+description = "A Windows OCR translation overlay powered by DeepL"
+requires-python = ">=3.10"
+dependencies = [
+    "Pillow>=10.0",
+    "pytesseract>=0.3.10",
+    "pywin32>=306; sys_platform == 'win32'",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[project.scripts]
+multilingual-overlay = "multilingual_overlay.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

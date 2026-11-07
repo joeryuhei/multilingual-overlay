@@ -1,2 +1,45 @@
-# multilingual-overlay
-An open-source Windows overlay for translating desktop app interfaces, starting with Japanese OCR translation.
+# Multilingual Overlay
+
+選択したウィンドウの文字をOCRで認識し、DeepLで日本語に翻訳して別ウィンドウに重ねるWindows向け試作です。最初の対象はGitHub Copilotデスクトップアプリですが、Windowsがキャプチャできるほかのウィンドウにも利用できます。
+
+## できること
+
+- 利用者が選択したウィンドウだけを端末内でキャプチャします。対象アプリの改変やコード注入は行いません。
+- Tesseract OCRで英語・日本語をローカル認識し、信頼度の低い単語を除外します。
+- OCR結果が連続して安定した場合だけ翻訳します。約1.5秒ごとに確認し、翻訳リクエストも間引きます。DeepLが失敗した場合は再試行間隔を段階的に延ばします。
+- DeepLへ送るのはOCRで得た文字列のみです。画面画像や画像データをDeepLに送ることはありません。
+- 翻訳済みの行を最大512件メモリ内にキャッシュし、新しい・変更された行だけDeepLへ送信します。オーバーレイは対象ウィンドウの位置に追従します。
+- 翻訳に失敗した場合はOCR原文を表示します。
+
+## 必要なもの
+
+- Windows 10以降
+- Python 3.10以降
+- Tesseract OCR（`PATH`に設定し、英語`eng`・日本語`jpn`の言語データを含める）
+- DeepL APIキー（FreeまたはPro）
+
+[UB MannheimのWindows版Tesseract](https://github.com/UB-Mannheim/tesseract/wiki)などからインストールし、英語と日本語の言語データを含めてください。
+
+## 起動方法
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e ".[test]"
+.\.venv\Scripts\python.exe -m multilingual_overlay.main
+```
+
+アプリで対象ウィンドウを選び、DeepLプランを選択し、APIキーを入力して「開始」を押します。Freeプランの接続先は`api-free.deepl.com`、Proプランは`api.deepl.com`です。代わりに`DEEPL_AUTH_KEY`環境変数（現在のターミナルセッションのみ）からキーを読み込むこともできます。キーは設定ファイルへ保存せず、ログにも出力しません。アプリ実行中のプロセスメモリ内でのみ使用します。
+
+Tesseractをインストールした後、`tesseract --list-langs`を実行し、一覧に`eng`と`jpn`があることを確認してください。PowerShellで仮想環境を有効化する必要はありません。上記のように仮想環境内のPythonを直接実行できます。
+
+対象ウィンドウは表示され、Windowsからキャプチャできる状態にしてください。一部のハードウェアアクセラレーション対応アプリは`PrintWindow`によるキャプチャを制限することがあります。その場合はエラーを表示し、画面全体のキャプチャへ無断で切り替えることはありません。
+
+## プライバシー
+
+ウィンドウ画像のキャプチャとOCR処理は利用者のPC内で完結します。**画面画像はDeepLへアップロード・送信されません。**認識した文字列に変化があり、安定している場合に限り、翻訳のためOCRテキストをHTTPS経由でDeepLへ送信します。APIリクエストの取り扱いはDeepLの利用規約・プライバシーポリシーに従います。APIキーは認証ヘッダーにのみ使用し、設定ファイルやログには保存しません。翻訳事業者への送信が適切でない機密テキストは翻訳しないでください。
+
+## テスト
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest
+```

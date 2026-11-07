@@ -1,0 +1,1 @@
+"""Windows OCR translation overlay."""
